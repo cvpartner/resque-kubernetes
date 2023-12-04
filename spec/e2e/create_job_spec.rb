@@ -3,15 +3,19 @@
 require "spec_helper"
 require "googleauth"
 
+# rubocop:disable Style/ClassVars
 class E2EThingExtendingJob
   extend Resque::Kubernetes::Job
+
+  @@namespace = nil
 
   # rubocop:disable Metrics/MethodLength
   def self.job_manifest
     {
         "metadata" => {
-            "name"   => "e2ething",
-            "labels" => {"e2e-tests" => "E2EThingExtendingJob"}
+            "name"      => "e2ething",
+            "namespace" => @@namespace,
+            "labels"    => {"e2e-tests" => "E2EThingExtendingJob"}
         },
         "spec"     => {
             "template" => {
@@ -29,6 +33,10 @@ class E2EThingExtendingJob
     }
   end
   # rubocop:enable Metrics/MethodLength
+end
+
+def namespace_generator(name)
+  Kubeclient::Resource.new(metadata: {name: name})
 end
 
 RSpec.describe "Create a job", type: "e2e" do
@@ -58,4 +66,51 @@ RSpec.describe "Create a job", type: "e2e" do
     expect(resque_jobs.count).to eq 1
     expect(resque_jobs.first.spec.completions).to eq 1
   end
+
+  context "when Resque::Kubernetes.restrict_to_default_namespace is enabled" do
+    let(:client) do
+      context = Resque::Kubernetes::ContextFactory.context
+      Kubeclient::Client.new(context.endpoint, context.version, **context.options)
+    end
+
+    after do
+      client.delete_namespace("resque-kubernetes-test-1", nil, delete_options: {})
+      client.delete_namespace("resque-kubernetes-test-2", nil, delete_options: {})
+    end
+
+    it "should only list jobs within the default namespace" do
+      client.create_namespace namespace_generator("resque-kubernetes-test-1")
+      client.create_namespace namespace_generator("resque-kubernetes-test-2")
+
+      E2EThingExtendingJob.class_variable_set(:@@namespace, "resque-kubernetes-test-1")
+      manager = Resque::Kubernetes::JobsManager.new(E2EThingExtendingJob)
+      manager.apply_kubernetes_job
+
+      E2EThingExtendingJob.class_variable_set(:@@namespace, "resque-kubernetes-test-2")
+      manager = Resque::Kubernetes::JobsManager.new(E2EThingExtendingJob)
+      manager.apply_kubernetes_job
+
+      E2EThingExtendingJob.class_variable_set(:@@namespace, nil)
+      manager = Resque::Kubernetes::JobsManager.new(E2EThingExtendingJob)
+      manager.apply_kubernetes_job
+
+      count = 0
+      while count != 60
+        finished_jobs = manager.send(:finished_jobs)
+        break if finished_jobs.count == 3
+
+        count += 1
+        sleep 1
+      end
+
+      expect(count).to_not eq 60 # timeout occurred for all jobs to complete
+
+      allow(Resque::Kubernetes).to receive(:restrict_to_default_namespace).and_return(true)
+      expect(manager.send(:finished_jobs).count).to eq 1
+      expect(manager.send(:finished_jobs).first.spec.completions).to eq 1
+      expect(manager.send(:finished_jobs).first.metadata.namespace)
+        .to eq manager.instance_variable_get(:@default_namespace)
+    end
+  end
 end
+# rubocop:enable Style/ClassVars

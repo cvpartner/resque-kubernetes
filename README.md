@@ -201,6 +201,26 @@ class ResourceIntensiveJob
 end
 ```
 
+### `restrict_to_default_namespace`
+
+If you want `Resque::Kubernetes` to **only** look for pods and jobs within the default<sup>**</sup> namespace, then enable
+this option.
+
+```ruby
+# config/initializers/resque-kubernetes.rb
+
+Resque::Kubernetes.configuration do |config|
+ config.enabled                       = true
+ config.restrict_to_default_namespace = true
+end
+```
+
+If you set this option to `true`, your `Resque::Kubernetes`-backed service will only require an associated Kubernetes Role 
+rather than a ClusterRole.
+
+<sup>**</sup>**Note** that the "default" namespace means the namespace your kube context is currently pointing to.
+The namespace is set to "default" if you supply a custom kubeclient OR the kube context does not have an associated namespace.
+
 ### kubeclient
 
 The gem will automatically connect to the Kubernetes server in the following cases:

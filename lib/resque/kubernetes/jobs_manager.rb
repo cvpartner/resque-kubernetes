@@ -74,13 +74,17 @@ module Resque
       end
 
       def finished_jobs
-        resque_jobs = jobs_client.get_jobs({label_selector: "resque-kubernetes=job"})
+        args = {label_selector: "resque-kubernetes=job"}
+        args[:namespace] = @default_namespace if Resque::Kubernetes.restrict_to_default_namespace
+        resque_jobs = jobs_client.get_jobs(args)
         resque_jobs.select { |job| job.spec.completions == job.status.succeeded }
       end
 
       def finished_pods
-        resque_jobs = pods_client.get_pods({label_selector: "resque-kubernetes=pod"})
-        resque_jobs.select do |pod|
+        args = {label_selector: "resque-kubernetes=pod"}
+        args[:namespace] = @default_namespace if Resque::Kubernetes.restrict_to_default_namespace
+        resque_pods = jobs_client.get_pods(args)
+        resque_pods.select do |pod|
           pod.status.phase == "Succeeded" && pod.status.containerStatuses.all? do |status|
             status.state.terminated.reason == "Completed"
           end

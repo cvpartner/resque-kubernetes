@@ -27,5 +27,14 @@ module Resque
 
     # A `kubeclient` for connection context, default attempts to read from cluster or `~/.kube/config`
     define_setting :kubeclient, nil
+
+    # Restrict the plugin to the default namespace.
+    #
+    # This is useful if you do **not** want to give the plugin cluster-wide access to other namespaces.
+    #
+    # Note the default namespace is the namespace derived from either the kube context OR simply the
+    # "default" namespace if the namespace is not set or cannot be found in the current context OR a
+    # custom kubeclient is provided.
+    define_setting :restrict_to_default_namespace, nil
   end
 end
